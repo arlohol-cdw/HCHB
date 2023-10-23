@@ -1,12 +1,16 @@
 from os import getenv
 from PaloAPIUtils import *
 
-DATE_STAMP = datetime.today().strftime("%y-%m-%d")
+
 SCRIPT_HEADER = 'SCRIPT-UNUSED'
 DEVICE_GROUP = 'PA-VM'
-EXCLUSION_TAG = "Test"
+EXCLUSION_TAG = ""
 DISABLE_INTERVAL = 90
 DELETE_INTERVAL = 30
+REPORT_MODE = False
+CLEAN_MODE = False
+
+DATE_STAMP = datetime.today().strftime("%y-%m-%d")
 SCRIPT_TAG = f'{SCRIPT_HEADER} {DATE_STAMP}'
 CLEAN_MODE_LOGGER = palo_logger("clean_up_logger",
                                 f"Logs/clean-mode-{DATE_STAMP}.log",
@@ -17,8 +21,7 @@ REPORT_MODE_LOGGER = palo_logger("report_only_logger",
 ACTIVE_MODE_LOGGER = palo_logger("clean_up_logger",
                                  f"Logs/policy-optimizer-{DATE_STAMP}.log",
                                  '%(asctime)s %(levelname)s %(message)s')
-REPORT_MODE = False
-CLEAN_MODE = False
+
 
 # TODO Discuss authentication
 

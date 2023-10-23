@@ -59,10 +59,10 @@ def get_rulebase(paloaltodevice):
     :param paloaltodevice: Firewall or Panorama Object
     :return: panos Rulebase object
     """
-    if type(paloaltodevice) == firewall.Firewall:
+    if isinstance(paloaltodevice, firewall.Firewall):
         rulebase = policies.Rulebase.refreshall(paloaltodevice, add=True)[0]
         return rulebase
-    elif type(paloaltodevice) == panorama.Panorama:
+    elif isinstance(paloaltodevice, panorama.Panorama):
         device_group = select_dev_group(paloaltodevice)
         choice = input("Please select a rulebase ('pre' or 'post'): ").lower()
         if choice not in ['pre', 'post']:
@@ -185,10 +185,10 @@ def _collect_hit_data(fw_obj: [firewall.Firewall, panorama.Panorama], target: st
     nat_op_cmd = "<show><rule-hit-count><vsys><vsys-name><entry name='vsys1'><rule-base><entry name='nat'><rules><all/></rules></entry></rule-base></entry></vsys-name></vsys></rule-hit-count></show>"
     sec_op_cmd = "<show><rule-hit-count><vsys><vsys-name><entry name='vsys1'><rule-base><entry name='security'><rules><all/></rules></entry></rule-base></entry></vsys-name></vsys></rule-hit-count></show>"
 
-    if type(fw_obj) == firewall.Firewall:
+    if isinstance(fw_obj, firewall.Firewall):
         nat_counts = fw_obj.op(nat_op_cmd, cmd_xml=False)
         sec_counts = fw_obj.op(sec_op_cmd, cmd_xml=False)
-    elif type(fw_obj) == panorama.Panorama:
+    elif isinstance(fw_obj, panorama.Panorama):
         try:
             int(target)
         except ValueError:
@@ -205,7 +205,7 @@ def _collect_hit_data(fw_obj: [firewall.Firewall, panorama.Panorama], target: st
     return {'NAT': parsed_nat_data, 'SEC': parsed_sec_data}
 
 
-def get_all_firewall_hit_data(pano_obj: panorama.Panorama, device_list: list, hit_interval:int = 90):
+def get_all_firewall_hit_data(pano_obj: panorama.Panorama, device_list: list, hit_interval: int = 90):
     hit_data = dict()
     for device in device_list:
         serial_num = device.id
@@ -218,7 +218,7 @@ def get_all_firewall_hit_data(pano_obj: panorama.Panorama, device_list: list, hi
     return hit_data
 
 
-def _check_usage(rule_data: list, usage_interval: int=90):
+def _check_usage(rule_data: list, usage_interval: int = 90):
     fmt_string = "%a %b %d %H:%M:%S %Y"
     used_rules = list()
     unused_rules = list()
@@ -240,9 +240,9 @@ def _check_usage(rule_data: list, usage_interval: int=90):
 def is_rule_used(rule_obj: [policies.SecurityRule, policies.NatRule], usage_info: dict):
     rule_name = rule_obj.name
     used = False
-    if type(rule_obj) == policies.NatRule:
+    if isinstance(rule_obj, policies.NatRule):
         rule_type = 'NAT'
-    elif type(rule_obj) == policies.SecurityRule:
+    elif isinstance(rule_obj, policies.SecurityRule):
         rule_type = 'SEC'
     else:
         raise ValueError(f'{rule_obj.name} is not a Security or NAT rule.')
@@ -251,7 +251,8 @@ def is_rule_used(rule_obj: [policies.SecurityRule, policies.NatRule], usage_info
     return used
 
 
-def valid_delete(rule_obj: [policies.SecurityRule, policies.NatRule], script_tag: str, exclude_tag: str,  interval: int) -> bool:
+def valid_delete(rule_obj: [policies.SecurityRule, policies.NatRule], script_tag: str, exclude_tag: str,
+                 interval: int) -> bool:
     """
     This function checks to see if a given rule is safe to delete. It uses the following criteria:
     1. Rule is disabled
