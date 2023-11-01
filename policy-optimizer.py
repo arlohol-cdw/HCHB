@@ -1,5 +1,4 @@
 from os import getenv
-from getpass import getpass
 from ansible_vault import Vault
 from PaloAPIUtils import *
 
