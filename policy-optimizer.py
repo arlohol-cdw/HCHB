@@ -1,14 +1,15 @@
 from os import getenv
+from ansible_vault import Vault
 from PaloAPIUtils import *
 
-
-SCRIPT_HEADER = 'SCRIPT-UNUSED'
-DEVICE_GROUP = 'PA-VM'
-EXCLUSION_TAG = ""
-DISABLE_INTERVAL = 90
-DELETE_INTERVAL = 30
-REPORT_MODE = False
-CLEAN_MODE = False
+VAULT_FILE = "vault.yml"
+SCRIPT_HEADER = 'SCRIPT-UNUSED'  # Header for the tag applied by the script
+DEVICE_GROUP = 'PA-VM'  # Case sensitive
+EXCLUSION_TAG = ""  # Case sensitive
+DISABLE_INTERVAL = 90  # Number of days a rule is unused before it is disabled by the script
+DELETE_INTERVAL = 30  # Number of days a rule has been disabled before it is deleted by the script.
+REPORT_MODE = False  # Run the script without making changes to the firewall or Panorama. Only creates logs
+CLEAN_MODE = False  # Removes all tags added by the script and re-enables all rules disabled by the script
 
 DATE_STAMP = datetime.today().strftime("%y-%m-%d")
 SCRIPT_TAG = f'{SCRIPT_HEADER} {DATE_STAMP}'
@@ -42,10 +43,10 @@ def main(report_mode=False, clean_mode=False, single_dg=""):
     :return:
     """
     # Authenticate to Panorama and collect all rules
-    host = getenv("HOST")
-    username = getenv("USERNAME")
-    password = getenv("PASSWORD")
-    panorama_obj = authenticate(host, username, password)
+    vault = Vault(getenv("VAULT_KEY"))
+    vault_data = vault.load(open(VAULT_FILE).read())
+    panorama_obj = authenticate(getenv("HOST"), vault_data['palo-user'], vault_data['palo-pass'])
+    del vault, vault_data
     all_rules = get_all_rules(panorama_obj, single_dg)
 
     # Run the script in Clean mode
@@ -155,9 +156,11 @@ def main(report_mode=False, clean_mode=False, single_dg=""):
             REPORT_MODE_LOGGER.info(f"Tag {SCRIPT_TAG} removed from {obj_list[0]}")
         elif len(obj_list) > 1 and not report_mode:
             [remove_tag(i, SCRIPT_TAG) for i in obj_list if is_rule_used(i, all_hit_data)]
-            [ACTIVE_MODE_LOGGER.info(f"Tag {SCRIPT_TAG} removed from {i}") for i in obj_list if is_rule_used(i, all_hit_data)]
+            [ACTIVE_MODE_LOGGER.info(f"Tag {SCRIPT_TAG} removed from {i}") for i in obj_list if
+             is_rule_used(i, all_hit_data)]
         elif len(obj_list) > 1 and report_mode:
-            [REPORT_MODE_LOGGER.info(f"Tag {SCRIPT_TAG} removed from {i}") for i in obj_list if is_rule_used(i, all_hit_data)]
+            [REPORT_MODE_LOGGER.info(f"Tag {SCRIPT_TAG} removed from {i}") for i in obj_list if
+             is_rule_used(i, all_hit_data)]
         else:
             if not report_mode:
                 ACTIVE_MODE_LOGGER.error(f"No rule named {rule} found in Panorama")
