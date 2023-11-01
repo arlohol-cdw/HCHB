@@ -1,8 +1,11 @@
 from os import getenv
+from getpass import getpass
 from ansible_vault import Vault
 from PaloAPIUtils import *
 
-VAULT_FILE = "vault.yml"
+
+MANUAL_AUTH = False  # If true, the script will prompt the user for credentials to sign in to Panorama
+VAULT_FILE = "vault.yml"  # File path to the Ansible Vault for credential storage
 SCRIPT_HEADER = 'SCRIPT-UNUSED'  # Header for the tag applied by the script
 DEVICE_GROUP = 'PA-VM'  # Case sensitive
 EXCLUSION_TAG = ""  # Case sensitive
@@ -24,10 +27,8 @@ ACTIVE_MODE_LOGGER = palo_logger("clean_up_logger",
                                  '%(asctime)s %(levelname)s %(message)s')
 
 
-# TODO Discuss authentication
 
-
-def main(report_mode=False, clean_mode=False, single_dg=""):
+def main(manual_auth=False, report_mode=False, clean_mode=False, single_dg=""):
     """
     This is the main policy optimization function. Calling this function will run the policy optimizer tool. It can
     be run in 3 modes:
@@ -36,17 +37,25 @@ def main(report_mode=False, clean_mode=False, single_dg=""):
     2. Report mode - Generate a log file to show what *would* have happened without making changes to the firewall. Useful
     for estimating impact at any given time
     3. Active mode (default) - This is the main mode that will perform optimizations and make changes to the firewall.
+    :param manual_auth: If true, the script will prompt the user for credentials
     :param report_mode: Run the script in Report mode. Cannot be run with Clean mode enabled.
     :param clean_mode: Run the script in Clean mode. Cannot be run with Report mode enabled.
     :param single_dg: Specify a single device group to run the optimizer on. Only rules in the specified device group
     will be tagged, disabled, or deleted.
     :return:
     """
+
     # Authenticate to Panorama and collect all rules
-    vault = Vault(getenv("VAULT_KEY"))
-    vault_data = vault.load(open(VAULT_FILE).read())
-    panorama_obj = authenticate(getenv("HOST"), vault_data['palo-user'], vault_data['palo-pass'])
-    del vault, vault_data
+    if manual_auth:
+        auth_data = dict()
+        auth_data['palo-user'] = input('Username: ')
+        auth_data['palo-pass'] = getpass('Password: ')
+    else:
+        vault = Vault(getenv("VAULT_KEY"))
+        auth_data = vault.load(open(VAULT_FILE).read())
+        del vault
+    panorama_obj = authenticate(getenv("HOST"), auth_data['palo-user'], auth_data['palo-pass'])
+    del auth_data
     all_rules = get_all_rules(panorama_obj, single_dg)
 
     # Run the script in Clean mode
@@ -206,4 +215,4 @@ def main(report_mode=False, clean_mode=False, single_dg=""):
 
 
 if __name__ == '__main__':
-    main(report_mode=REPORT_MODE, clean_mode=CLEAN_MODE, single_dg=DEVICE_GROUP)
+    main(manual_auth=MANUAL_AUTH, report_mode=REPORT_MODE, clean_mode=CLEAN_MODE, single_dg=DEVICE_GROUP)

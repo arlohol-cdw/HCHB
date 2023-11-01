@@ -17,6 +17,16 @@ This tool has 3 different modes of operation:
 
 Each mode has its own log file, specified in the main policy-optimizer.py file.
 
+### Authentication
+There are two options for authentication:
+1. Manual Authentication: If enabled, the script will prompt the user for credentials
+2. Ansible Vault Authentication: If manual authentication is *not* enabled, an environment variable must be
+created (VAULT_KEY) with the key to decrypt the Ansible Vault. See [here](https://www.redhat.com/sysadmin/introduction-ansible-vault)
+for instructions on setting up the vault. Inside that vault, two variables will be set
+   - palo-user: username
+   - palo-pass: password 
+
+**Note:** These credentials should be the same service account used for device upgrades.
 ## Set up
 This script was tested on Python 3.11, but should work with most versions of Python 3. Once Python is installed, environment variables (USERNAME and PASSWORD) will need to be created with administrative credentials in Panorama. It is recommended that a specific service account is created for this that does not have permission to log into the GUI or access the CLI, but has permission to make changes with the API.
 
@@ -24,7 +34,10 @@ Any scheduling tool that can be used to run a Python script can be used to run t
 
 ## Requirements
 - Python 3
-- The only 3rd party library that needs to be installed is the PAN-OS Python SDK
+- The only 3rd party libraries that need to be installed is the PAN-OS Python SDK and ansible-vault
+  - Ansible Vault is only used if the manual authentication feature is not selected
+- Ansible
 ```
 pip install pan-os-python
+pip install ansible-vault
 ```
