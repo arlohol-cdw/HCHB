@@ -26,7 +26,6 @@ ACTIVE_MODE_LOGGER = palo_logger("clean_up_logger",
                                  '%(asctime)s %(levelname)s %(message)s')
 
 
-
 def main(manual_auth=False, report_mode=False, clean_mode=False, single_dg=""):
     """
     This is the main policy optimization function. Calling this function will run the policy optimizer tool. It can
