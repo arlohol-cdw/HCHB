@@ -3,27 +3,30 @@ from ansible_vault import Vault
 from PaloAPIUtils import *
 
 
-MANUAL_AUTH = True  # If true, the script will prompt the user for credentials to sign in to Panorama
+MANUAL_AUTH = False  # If true, the script will prompt the user for credentials to sign in to Panorama
 VAULT_FILE = "vault.yml"  # File path to the Ansible Vault for credential storage
 SCRIPT_HEADER = 'SCRIPT-UNUSED'  # Header for the tag applied by the script
 DEVICE_GROUP = 'PA-VM'  # Case sensitive
 EXCLUSION_TAG = ""  # Case sensitive
 DISABLE_INTERVAL = 90  # Number of days a rule is unused before it is disabled by the script
 DELETE_INTERVAL = 30  # Number of days a rule has been disabled before it is deleted by the script.
-REPORT_MODE = False  # Run the script without making changes to the firewall or Panorama. Only creates logs
+REPORT_MODE = True  # Run the script without making changes to the firewall or Panorama. Only creates logs
 CLEAN_MODE = False  # Removes all tags added by the script and re-enables all rules disabled by the script
 
 DATE_STAMP = datetime.today().strftime("%y-%m-%d")
 SCRIPT_TAG = f'{SCRIPT_HEADER} {DATE_STAMP}'
-CLEAN_MODE_LOGGER = palo_logger("clean_up_logger",
-                                f"Logs/clean-mode-{DATE_STAMP}.log",
-                                '%(asctime)s %(levelname)s %(message)s')
-REPORT_MODE_LOGGER = palo_logger("report_only_logger",
-                                 f"Logs/report-mode-{DATE_STAMP}.log",
-                                 '%(asctime)s %(levelname)s %(message)s')
-ACTIVE_MODE_LOGGER = palo_logger("clean_up_logger",
-                                 f"Logs/policy-optimizer-{DATE_STAMP}.log",
-                                 '%(asctime)s %(levelname)s %(message)s')
+if CLEAN_MODE:
+    CLEAN_MODE_LOGGER = palo_logger("clean_up_logger",
+                                    f"Logs/clean-mode-{DATE_STAMP}.log",
+                                    '%(asctime)s %(levelname)s %(message)s')
+if REPORT_MODE:
+    REPORT_MODE_LOGGER = palo_logger("report_only_logger",
+                                     f"Logs/report-mode-{DATE_STAMP}.log",
+                                     '%(asctime)s %(levelname)s %(message)s')
+else:
+    ACTIVE_MODE_LOGGER = palo_logger("clean_up_logger",
+                                     f"Logs/policy-optimizer-{DATE_STAMP}.log",
+                                     '%(asctime)s %(levelname)s %(message)s')
 
 
 def main(manual_auth=True, report_mode=False, clean_mode=False, single_dg=""):
@@ -80,13 +83,13 @@ def main(manual_auth=True, report_mode=False, clean_mode=False, single_dg=""):
     devices = panorama_obj.refresh_devices(include_device_groups=False, only_connected=True)
     all_hit_data = get_all_firewall_hit_data(panorama_obj, devices, DISABLE_INTERVAL)
 
-    all_used_rules = {'SEC': list(), 'NAT': list()}
-    all_unused_rules = {'SEC': list(), 'NAT': list()}
+    all_used_rules = {'SEC': set(), 'NAT': set()}
+    all_unused_rules = {'SEC': set(), 'NAT': set()}
     for fw_device in all_hit_data:
-        all_used_rules['SEC'].extend(all_hit_data[fw_device]['SEC']['used'])
-        all_used_rules['NAT'].extend(all_hit_data[fw_device]['NAT']['used'])
-        all_unused_rules['SEC'].extend(all_hit_data[fw_device]['SEC']['unused'])
-        all_unused_rules['NAT'].extend(all_hit_data[fw_device]['NAT']['unused'])
+        all_used_rules['SEC'].update(set(all_hit_data[fw_device]['SEC']['used']))
+        all_used_rules['NAT'].update(set(all_hit_data[fw_device]['NAT']['used']))
+        all_unused_rules['SEC'].update(set(all_hit_data[fw_device]['SEC']['unused']))
+        all_unused_rules['NAT'].update(set(all_hit_data[fw_device]['NAT']['unused']))
 
     # Tag unused Security rules
     for rule in all_unused_rules['SEC']:
@@ -100,19 +103,20 @@ def main(manual_auth=True, report_mode=False, clean_mode=False, single_dg=""):
         elif len(obj_list) == 1 and report_mode:
             REPORT_MODE_LOGGER.info(f"Tag {SCRIPT_TAG} added to {obj_list[0]}")
         elif len(obj_list) > 1 and not report_mode:
-            [add_tag(panorama_obj, i, SCRIPT_TAG) for i in obj_list if not is_rule_used(i, all_hit_data)]
-            [ACTIVE_MODE_LOGGER.info(f"Tag {SCRIPT_TAG} added to {i}") for i in obj_list if
-             not is_rule_used(i, all_hit_data)]
+            _ = [add_tag(panorama_obj, i, SCRIPT_TAG) for i in obj_list if not is_rule_used(i, all_hit_data)]
+            _ = [ACTIVE_MODE_LOGGER.info(f"Tag {SCRIPT_TAG} added to {i}") for i in obj_list if
+                 not is_rule_used(i, all_hit_data)]
         elif len(obj_list) > 1 and report_mode:
-            [REPORT_MODE_LOGGER.info(f"Tag {SCRIPT_TAG} added to {i}") for i in obj_list if
-             not is_rule_used(i, all_hit_data)]
+            _ = [REPORT_MODE_LOGGER.info(f"Tag {SCRIPT_TAG} added to {i}") for i in obj_list if
+                 not is_rule_used(i, all_hit_data)]
         elif rule in ['intrazone-default', 'interzone-default']:
             pass
         else:
-            if not report_mode:
-                ACTIVE_MODE_LOGGER.error(f"No rule named {rule} found in Panorama")
-            else:
+            if report_mode:
                 REPORT_MODE_LOGGER.error(f"No rule named {rule} found in Panorama")
+            else:
+                ACTIVE_MODE_LOGGER.error(f"No rule named {rule} found in Panorama")
+
 
     # Tag unused NAT rules
     for rule in all_unused_rules['NAT']:
@@ -126,17 +130,17 @@ def main(manual_auth=True, report_mode=False, clean_mode=False, single_dg=""):
         elif len(obj_list) == 1 and report_mode:
             REPORT_MODE_LOGGER.info(f"Tag {SCRIPT_TAG} added to {obj_list[0]}")
         elif len(obj_list) > 1 and not report_mode:
-            [add_tag(panorama_obj, i, SCRIPT_TAG) for i in obj_list if not is_rule_used(i, all_hit_data)]
-            [ACTIVE_MODE_LOGGER.info(f"Tag {SCRIPT_TAG} added to {i}") for i in obj_list if
-             not is_rule_used(i, all_hit_data)]
+            _ = [add_tag(panorama_obj, i, SCRIPT_TAG) for i in obj_list if not is_rule_used(i, all_hit_data)]
+            _ = [ACTIVE_MODE_LOGGER.info(f"Tag {SCRIPT_TAG} added to {i}") for i in obj_list if
+                 not is_rule_used(i, all_hit_data)]
         elif len(obj_list) > 1 and report_mode:
-            [REPORT_MODE_LOGGER.info(f"Tag {SCRIPT_TAG} added to {i}") for i in obj_list if
-             not is_rule_used(i, all_hit_data)]
+            _ = [REPORT_MODE_LOGGER.info(f"Tag {SCRIPT_TAG} added to {i}") for i in obj_list if
+                 not is_rule_used(i, all_hit_data)]
         else:
-            if not report_mode:
-                ACTIVE_MODE_LOGGER.error(f'No rule named {rule} found in Panorama.')
+            if report_mode:
+                REPORT_MODE_LOGGER.error(f"No rule named {rule} found in Panorama")
             else:
-                REPORT_MODE_LOGGER.error(f'No rule named {rule} found in Panorama.')
+                ACTIVE_MODE_LOGGER.error(f"No rule named {rule} found in Panorama")
 
     # Remove tag from used Security rules
     for rule in all_used_rules['SEC']:
@@ -148,10 +152,7 @@ def main(manual_auth=True, report_mode=False, clean_mode=False, single_dg=""):
         elif rule in ['intrazone-default', 'interzone-default']:
             pass
         else:
-            if not report_mode:
-                ACTIVE_MODE_LOGGER.error(f"No rule named {rule} found in Panorama")
-            elif report_mode:
-                REPORT_MODE_LOGGER.error(f"No rule named {rule} found in Panorama")
+            pass
 
     # Remove tag from used NAT rules
     for rule in all_used_rules['NAT']:
@@ -169,10 +170,7 @@ def main(manual_auth=True, report_mode=False, clean_mode=False, single_dg=""):
             [REPORT_MODE_LOGGER.info(f"Tag {SCRIPT_TAG} removed from {i}") for i in obj_list if
              is_rule_used(i, all_hit_data)]
         else:
-            if not report_mode:
-                ACTIVE_MODE_LOGGER.error(f"No rule named {rule} found in Panorama")
-            elif report_mode:
-                REPORT_MODE_LOGGER.error(f"No rule named {rule} found in Panorama")
+            pass
 
     # Disable tagged rules
     for rule in all_rules['SEC']:

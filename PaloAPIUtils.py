@@ -222,13 +222,16 @@ def _check_usage(rule_data: list, usage_interval: int = 90):
     fmt_string = "%a %b %d %H:%M:%S %Y"
     used_rules = list()
     unused_rules = list()
+
     for rule in rule_data:
-        if rule['first-hit-timestamp'] == 0:
+        time_since_creation = datetime.now() - datetime.strptime(rule['rule-creation-timestamp'], fmt_string)
+        if rule['last-hit-timestamp'] == 0:
+            last_hit = datetime.fromtimestamp(0)
+        else:
+            last_hit = datetime.strptime(rule['last-hit-timestamp'], fmt_string)
+        if rule['first-hit-timestamp'] == 0 and time_since_creation > timedelta(days=usage_interval):
             unused_rules.append(rule['name'])
             continue
-        else:
-            # first_hit = datetime.strptime(rule['first-hit-timestamp'], fmt_string)
-            last_hit = datetime.strptime(rule['last-hit-timestamp'], fmt_string)
         if datetime.now() - last_hit > timedelta(days=usage_interval):
             unused_rules.append(rule['name'])
         else:
