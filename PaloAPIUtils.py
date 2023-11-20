@@ -302,3 +302,18 @@ def palo_logger(name: str, log_file_path: str, format_str: str, level=logging.IN
     logger.setLevel(level)
     logger.addHandler(handler)
     return logger
+
+
+def check_for_tag(obj: [policies.SecurityRule, policies.NatRule], tag_value: str) -> bool:
+    """
+    This function checks a Security or NAT rule object for a particular tag
+    :param obj: Rule object to check
+    :param tag_value: Tag value to check for
+    :return: Boolean result of tag check
+    """
+    if not obj.tag:
+        return False
+    elif tag_value in obj.tag:
+        return True
+    else:
+        return False
