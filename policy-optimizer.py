@@ -148,20 +148,33 @@ def main(manual_auth=True, report_mode=False, clean_mode=False, single_dg=""):
 
     # Remove tag from used Security rules
     for rule in all_used_rules['SEC']:
+        # Build list of used security rules with the relevant tag (searching by name)
         obj_list = [obj for obj in all_rules['SEC'] if obj.uid == rule and check_for_tag(obj, SCRIPT_TAG)]
+
+        # If there are no matches, skip to the next rule
         if len(obj_list) == 0:
             continue
+
+        # Remove the tag under the following conditions:
+        #   1. Report mode is not enabled
+        #   2. Rule usage is verified
         elif len(obj_list) == 1 and not report_mode and is_rule_used(obj_list[0], all_hit_data):
             remove_tag(obj_list[0], SCRIPT_TAG)
             ACTIVE_MODE_LOGGER.info(f"Tag {SCRIPT_TAG} removed from security rule: {obj_list[0]}")
         elif len(obj_list) > 1 and not report_mode:
             remove_tag_log = f"Tag {SCRIPT_TAG} removed from security rule: {obj_list[0]}"
-            [remove_tag(i, SCRIPT_TAG) and REPORT_MODE_LOGGER.info(remove_tag_log) for i in obj_list if is_rule_used(i, all_hit_data)]
+            [remove_tag(i, SCRIPT_TAG) and ACTIVE_MODE_LOGGER.info(remove_tag_log) for i in obj_list if is_rule_used(i, all_hit_data)]
+
+        # If report mode is enabled, log the same result, but don't remove the tag
+        elif len(obj_list) == 1 and report_mode and is_rule_used(obj_list[0], all_hit_data):
+            REPORT_MODE_LOGGER.info(f"Tag {SCRIPT_TAG} removed from NAT rule {obj_list[0]}")
         elif len(obj_list) > 1 and report_mode:
             [REPORT_MODE_LOGGER.info(f"Tag {SCRIPT_TAG} removed from NAT rule {i}") for i in obj_list if
              is_rule_used(i, all_hit_data)]
+
+        # Skip for default rules
         elif rule in ['intrazone-default', 'interzone-default']:
-            pass
+            continue
         else:
             pass
 
