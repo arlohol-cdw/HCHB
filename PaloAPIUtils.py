@@ -317,3 +317,57 @@ def check_for_tag(obj: [policies.SecurityRule, policies.NatRule], tag_value: str
         return True
     else:
         return False
+
+
+def _build_dg_hierarchy(panorama: panorama.Panorama):
+    # dg_hierarchy = panorama.op('show dg-hierarchy')
+    resp = panorama.op("show dg-hierarchy")
+    data = resp.find("./result/dg-hierarchy")
+
+    ans = {}
+    nodes = [(None, x) for x in data.findall("./dg")]
+    for parent, elm in iter(nodes):
+        ans[elm.attrib["name"]] = parent
+        nodes.extend((elm.attrib["name"], x) for x in elm.findall("./dg"))
+    ans_out = dict()
+    for child, parent in ans.items():
+        if parent not in ans_out.keys():
+            ans_out[parent] = [child]
+        else:
+            ans_out[parent].append(child)
+
+    return ans_out
+
+
+def find_children_dgs(parent: str, hierarchy: dict):
+    # Found parent with children
+    child_out = set()
+    try:
+        children = hierarchy[parent]
+        child_out.update(set(children))
+        for child in children:
+            g_children = find_children_dgs(child, hierarchy)
+            child_out.update(g_children)
+        return child_out
+    # If dg not found as a parent, return children
+    except KeyError:
+        return child_out
+
+
+def build_member_devices(panorama_obj: panorama.Panorama):
+    device_hierarchy = _build_dg_hierarchy(panorama_obj)
+    devices = panorama_obj.refresh_devices(include_device_groups=False, only_connected=False)
+    dgs = panorama.DeviceGroup.refreshall(panorama_obj)
+    device_membership = dict()
+    dg_membership = dict()
+    for dg in dgs:
+        dg_membership[dg.name] = find_children_dgs(dg.name, device_hierarchy)
+    for dg, children in dg_membership.items():
+        parent_dg_obj = panorama.DeviceGroup.find(panorama_obj, dg)
+        device_membership[dg] = [i for i in parent_dg_obj.children if isinstance(i, firewall.Firewall)]
+        for child in children:
+            dg_obj = panorama.DeviceGroup.find(panorama_obj, child)
+            devices = [i for i in dg_obj.children if isinstance(i, firewall.Firewall)]
+            device_membership[dg].extend(devices)
+    return device_membership
+
