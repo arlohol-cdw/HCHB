@@ -213,8 +213,8 @@ def get_all_firewall_hit_data(pano_obj: panorama.Panorama, device_list: list, hi
         device_data = _collect_hit_data(pano_obj, target=serial_num)
         nat_usage = _check_usage(device_data['NAT'], usage_interval=hit_interval)
         sec_usage = _check_usage(device_data['SEC'], usage_interval=hit_interval)
-        hit_data[hostname] = {'NAT': nat_usage, 'SEC': sec_usage}
-        hit_data[hostname]['serial'] = serial_num
+        hit_data[serial_num] = {'NAT': nat_usage, 'SEC': sec_usage}
+        hit_data[serial_num]['hostname'] = hostname
     return hit_data
 
 
@@ -319,9 +319,9 @@ def check_for_tag(obj: [policies.SecurityRule, policies.NatRule], tag_value: str
         return False
 
 
-def _build_dg_hierarchy(panorama: panorama.Panorama):
+def _build_dg_hierarchy(panorama_obj: panorama.Panorama):
     # dg_hierarchy = panorama.op('show dg-hierarchy')
-    resp = panorama.op("show dg-hierarchy")
+    resp = panorama_obj.op("show dg-hierarchy")
     data = resp.find("./result/dg-hierarchy")
 
     ans = {}
@@ -339,7 +339,13 @@ def _build_dg_hierarchy(panorama: panorama.Panorama):
     return ans_out
 
 
-def find_children_dgs(parent: str, hierarchy: dict):
+def find_children_dgs(parent: str, hierarchy: dict) -> set:
+    """
+    Recursively finds all children of a given device group
+    :param parent: Parent device group
+    :param hierarchy: Device Hierarcy dictionary pulled from Panorama
+    :return: Set of all child device groups for a particular parent
+    """
     # Found parent with children
     child_out = set()
     try:
@@ -354,7 +360,13 @@ def find_children_dgs(parent: str, hierarchy: dict):
         return child_out
 
 
-def build_member_devices(panorama_obj: panorama.Panorama):
+def build_member_devices(panorama_obj: panorama.Panorama) -> dict:
+    """
+    Build out a dictionary whose keys are all the device groups in Panorama. The values are a list of the
+    firewalls that are underneath that device group or any of its children.
+    :param panorama_obj: Panorama object
+    :return: Dictionary described above
+    """
     device_hierarchy = _build_dg_hierarchy(panorama_obj)
     devices = panorama_obj.refresh_devices(include_device_groups=False, only_connected=False)
     dgs = panorama.DeviceGroup.refreshall(panorama_obj)
@@ -364,10 +376,24 @@ def build_member_devices(panorama_obj: panorama.Panorama):
         dg_membership[dg.name] = find_children_dgs(dg.name, device_hierarchy)
     for dg, children in dg_membership.items():
         parent_dg_obj = panorama.DeviceGroup.find(panorama_obj, dg)
-        device_membership[dg] = [i for i in parent_dg_obj.children if isinstance(i, firewall.Firewall)]
+        device_members = [i.id for i in parent_dg_obj.children if isinstance(i, firewall.Firewall)]
+        device_membership[dg] = [i for i in devices if i.id in device_members]
         for child in children:
             dg_obj = panorama.DeviceGroup.find(panorama_obj, child)
-            devices = [i for i in dg_obj.children if isinstance(i, firewall.Firewall)]
-            device_membership[dg].extend(devices)
+            child_device_members = [i.id for i in dg_obj.children if isinstance(i, firewall.Firewall)]
+            child_device_membership = [i for i in devices if i.id in child_device_members]
+            # dev_name = tr_device.op("show system info").find(".//hostname").text
+            device_membership[dg].extend(child_device_membership)
     return device_membership
 
+
+def find_devices_from_rule(rule_obj: [policies.SecurityRule, policies.NatRule], device_dict: dict):
+    """
+    Collect all device objects that a given rule is applied to
+    :param rule_obj: The rule that is being searched for
+    :param device_dict: The dictionary that contains the output of which devices the rule applies to.
+    :return: Updated dictionary of devices a rule applies to
+    """
+    dg = rule_obj.parent.parent.name
+    devices = device_dict[dg]
+    return devices
