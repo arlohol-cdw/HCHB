@@ -2,7 +2,7 @@ from os import getenv
 from ansible_vault import Vault
 from PaloAPIUtils import *
 
-MANUAL_AUTH = False  # If true, the script will prompt the user for credentials to sign in to Panorama
+MANUAL_AUTH = True  # If true, the script will prompt the user for credentials to sign in to Panorama
 VAULT_FILE = "vault.yml"  # File path to the Ansible Vault for credential storage
 SCRIPT_HEADER = 'SCRIPT-UNUSED'  # Header for the tag applied by the script
 DEVICE_GROUP = ''  # Case sensitive
@@ -44,9 +44,9 @@ def main(manual_auth=True, report_mode=False, clean_mode=False, single_dg=""):
     will be tagged, disabled, or deleted.
     :return:
     """
-    LOGGER.info("-"*80)
-    LOGGER.info("-"*22+" Starting policy optimizer script. "+"-"*23)
-    LOGGER.info("-"*80)
+    LOGGER.info("-" * 80)
+    LOGGER.info("-" * 22 + " Starting policy optimizer script. " + "-" * 23)
+    LOGGER.info("-" * 80)
     # Authenticate to Panorama and collect all rules
     if manual_auth:
         auth_data = dict()
@@ -94,41 +94,37 @@ def main(manual_auth=True, report_mode=False, clean_mode=False, single_dg=""):
         all_unused_rules['SEC'].update(set(all_hit_data[fw_device]['SEC']['unused']))
         all_unused_rules['NAT'].update(set(all_hit_data[fw_device]['NAT']['unused']))
 
-        # Tag unused Security rules
-        for rule in all_unused_rules['SEC']:
-            if EXCLUSION_TAG:
-                obj_list = [obj for obj in all_rules['SEC'] if obj.uid == rule and EXCLUSION_TAG not in obj.tag]
-            else:
-                obj_list = [obj for obj in all_rules['SEC'] if obj.uid == rule]
+    # Tag unused Security rules
+    for rule in all_unused_rules['SEC']:
+        if EXCLUSION_TAG:
+            obj_list = [obj for obj in all_rules['SEC'] if obj.uid == rule and EXCLUSION_TAG not in obj.tag]
+        else:
+            obj_list = [obj for obj in all_rules['SEC'] if obj.uid == rule]
 
-            if not report_mode:
-                if len(obj_list) == 1:
-                    add_tag(panorama_obj, obj_list[0], SCRIPT_TAG)
-                    LOGGER.info(f"Tag {SCRIPT_TAG} added to security rule: {obj_list[0]}")
-                elif len(obj_list) > 1:
-                    _ = [add_tag(panorama_obj, i, SCRIPT_TAG) for i in obj_list if not is_rule_used(i, all_hit_data)]
-                    _ = [LOGGER.info(f"Tag {SCRIPT_TAG} added to security rule: {i}") for i in obj_list if
-                         not is_rule_used(i, all_hit_data)]
-                else:
-                    pass
-            else:
-                # Go through every rule object
-                for obj in obj_list:
+        # Go through every rule object
+        for obj in obj_list:
 
-                    # Find devices that the rule is present on, and throw warning if it's on a disconnected device.
-                    rule_devices = find_devices_from_rule(obj, device_dict)
-                    if any([True for dev in rule_devices if not dev.state.connected]):
-                        LOGGER.warning(f"Rule \"{obj.name}\" with uuid {obj.uuid} exists on a disconnected device. Unable to collect latest hit data.")
-                    # If the rule is only present on connected devices, check if it is used anywhere. If the rule is not
-                    # used anywhere, add the tag.
+            # Find devices that the rule is present on, and throw warning if it's on a disconnected device.
+            rule_devices = find_devices_from_rule(obj, device_dict)
+            if any([True for dev in rule_devices if not dev.state.connected]):
+                LOGGER.warning(
+                    f"Security Rule \"{obj.name}\" with uuid {obj.uuid} exists on a disconnected device. Unable to collect latest hit data.")
+            # If the rule is only present on connected devices, check if it is used anywhere. If the rule is not
+            # used anywhere, add the tag.
+            else:
+                rule_used = False
+                for dev in rule_devices:
+                    if obj.name in all_hit_data[dev.id]['SEC']['used']:
+                        rule_used = True
+                if not rule_used and not obj.disabled:
+                    if report_mode:
+                        LOGGER.info(f"Tag {SCRIPT_TAG} added to Security rule \"{obj.name}\" with uuid {obj.uuid}.")
                     else:
-                        rule_used = False
-                        for dev in rule_devices:
-                            if obj.name in all_hit_data[dev.id]['SEC']['used']:
-                                # print(f"Rule {obj.name} is used.")
-                                rule_used = True
-                        if not rule_used:
-                            LOGGER.info(f"Tag {SCRIPT_TAG} added to Security rule \"{obj.name}\" with uuid {obj.uuid}.")
+                        add_tag(panorama_obj, obj, SCRIPT_TAG)
+                        obj.disabled = True
+                        obj.apply()
+                        LOGGER.warning(
+                            f"Rule \"{obj.name}\" tagged and disabled. Device Group: {obj.parent.parent}. UUID: {obj.uuid}")
 
     # Tag unused NAT rules
     for rule in all_unused_rules['NAT']:
@@ -137,120 +133,31 @@ def main(manual_auth=True, report_mode=False, clean_mode=False, single_dg=""):
             obj_list = [obj for obj in all_rules['NAT'] if obj.uid == rule and EXCLUSION_TAG not in obj.tag]
         else:
             obj_list = [obj for obj in all_rules['NAT'] if obj.uid == rule]
-        if not report_mode:
-            if len(obj_list) == 1:
-                add_tag(panorama_obj, obj_list[0], SCRIPT_TAG)
-                LOGGER.info(f"Tag {SCRIPT_TAG} added to NAT rule: {obj_list[0]}")
-            elif len(obj_list) > 1:
-                _ = [add_tag(panorama_obj, i, SCRIPT_TAG) for i in obj_list if not is_rule_used(i, all_hit_data)]
-                _ = [LOGGER.info(f"Tag {SCRIPT_TAG} added to NAT rule: {i}") for i in obj_list if
-                     not is_rule_used(i, all_hit_data)]
+
+        # Go through every rule object
+        for obj in obj_list:
+
+            # Find devices that the rule is present on, and throw warning if it's on a disconnected device.
+            rule_devices = find_devices_from_rule(obj, device_dict)
+            if any([True for dev in rule_devices if not dev.state.connected]):
+                LOGGER.warning(
+                    f"NAT Rule \"{obj.name}\" with uuid {obj.uuid} exists on a disconnected device. Unable to collect latest hit data.")
+            # If the rule is only present on connected devices, check if it is used anywhere. If the rule is not
+            # used anywhere, add the tag.
             else:
-                pass
-        else:
-            # Go through every rule object
-            for obj in obj_list:
-
-                # Find devices that the rule is present on, and throw warning if it's on a disconnected device.
-                rule_devices = find_devices_from_rule(obj, device_dict)
-                if any([True for dev in rule_devices if not dev.state.connected]):
-                    LOGGER.warning(
-                        f"NAT Rule \"{obj.name}\" with uuid {obj.uuid} exists on a disconnected device. Unable to collect latest hit data.")
-                # If the rule is only present on connected devices, check if it is used anywhere. If the rule is not
-                # used anywhere, add the tag.
-                else:
-                    rule_used = False
-                    for dev in rule_devices:
-                        if obj.name in all_hit_data[dev.id]['NAT']['used']:
-                            rule_used = True
-                    if not rule_used:
-                        LOGGER.info(f"Tag {SCRIPT_TAG} added to NAT rule \"{obj.name}\" with uuid {obj.uuid}.")
-        # # If there is only one match and it is used, skip
-        # if len(obj_list) == 1 and is_rule_used(obj_list[0], all_hit_data):
-        #     continue
-        # # If there is only one match and it is not used, log and tag if not in report mode
-        # elif len(obj_list) == 1 and not is_rule_used(obj_list[0], all_hit_data):
-        #     if report_mode:
-        #         LOGGER.info(f"Tag {SCRIPT_TAG} added to NAT rule: {obj_list[0]}")
-        #     else:
-        #         add_tag(panorama_obj, obj_list[0], SCRIPT_TAG)
-        #         LOGGER.info(f"Tag {SCRIPT_TAG} added to NAT rule: {obj_list[0]}")
-        #
-        # # If there is more than one match, check for report mode and log/add tag appropriately
-        # elif len(obj_list) > 1:
-        #     if report_mode:
-        #         _ = [LOGGER.info(f"Tag {SCRIPT_TAG} added to NAT rule: {i}") for i in obj_list if
-        #              not is_rule_used(i, all_hit_data)]
-        #     else:
-        #         _ = [add_tag(panorama_obj, i, SCRIPT_TAG) for i in obj_list if not is_rule_used(i, all_hit_data)]
-        #         _ = [LOGGER.info(f"Tag {SCRIPT_TAG} added to NAT rule: {i}") for i in obj_list if
-        #              not is_rule_used(i, all_hit_data)]
-        # # No matches found
-        # else:
-        #     pass
-
-    # # Remove tag from used Security rules
-    # for rule in all_used_rules['SEC']:
-    #     # Build list of used security rules with the relevant tag (searching by name)
-    #     obj_list = [obj for obj in all_rules['SEC'] if obj.uid == rule and check_for_tag(obj, SCRIPT_TAG)]
-    #
-    #     # If there are no matches, skip to the next rule
-    #     if len(obj_list) == 0:
-    #         continue
-    #
-    #     # Remove the tag under the following conditions:
-    #     #   1. Report mode is not enabled
-    #     #   2. Rule usage is verified
-    #     elif len(obj_list) == 1 and not report_mode and is_rule_used(obj_list[0], all_hit_data):
-    #         remove_tag(obj_list[0], SCRIPT_TAG)
-    #         LOGGER.info(f"Tag {SCRIPT_TAG} removed from security rule: {obj_list[0]}")
-    #     elif len(obj_list) > 1 and not report_mode:
-    #         remove_tag_log = f"Tag {SCRIPT_TAG} removed from security rule: {obj_list[0]}"
-    #         [remove_tag(i, SCRIPT_TAG) and LOGGER.info(remove_tag_log) for i in obj_list if
-    #          is_rule_used(i, all_hit_data)]
-    #
-    #     # If report mode is enabled, log the same result, but don't remove the tag
-    #     elif len(obj_list) == 1 and report_mode and is_rule_used(obj_list[0], all_hit_data):
-    #         LOGGER.info(f"Tag {SCRIPT_TAG} removed from NAT rule {obj_list[0]}")
-    #     elif len(obj_list) > 1 and report_mode:
-    #         [LOGGER.info(f"Tag {SCRIPT_TAG} removed from NAT rule {i}") for i in obj_list if
-    #          is_rule_used(i, all_hit_data)]
-    #
-    #     # Skip for default rules
-    #     elif rule in ['intrazone-default', 'interzone-default']:
-    #         continue
-    #     else:
-    #         pass
-
-    # # Remove tag from used NAT rules
-    # for rule in all_used_rules['NAT']:
-    #     # Build list of used security rules with the relevant tag (searching by name)
-    #     obj_list = [obj for obj in all_rules['NAT'] if obj.uid == rule and check_for_tag(obj, SCRIPT_TAG)]
-    #
-    #     # If there are no matches, skip to the next rule
-    #     if len(obj_list) == 0:
-    #         continue
-    #
-    #     # Remove the tag under the following conditions:
-    #     #   1. Report mode is not enabled
-    #     #   2. Rule usage is verified
-    #     if len(obj_list) == 1 and not report_mode and is_rule_used(obj_list[0], all_hit_data):
-    #         remove_tag(obj_list[0], SCRIPT_TAG)
-    #         LOGGER.info(f"Tag {SCRIPT_TAG} removed from NAT rule {obj_list[0]}")
-    #     elif len(obj_list) > 1 and not report_mode:
-    #         [remove_tag(i, SCRIPT_TAG) for i in obj_list if is_rule_used(i, all_hit_data)]
-    #         [LOGGER.info(f"Tag {SCRIPT_TAG} removed from NAT rule {i}") for i in obj_list if
-    #          is_rule_used(i, all_hit_data)]
-    #
-    #     # If report mode is enabled, log the same result, but don't remove the tag
-    #     elif len(obj_list) == 1 and report_mode and is_rule_used(obj_list[0], all_hit_data):
-    #         LOGGER.info(f"Tag {SCRIPT_TAG} removed from NAT rule {obj_list[0]}")
-    #     elif len(obj_list) > 1 and report_mode:
-    #         [LOGGER.info(f"Tag {SCRIPT_TAG} removed from NAT rule {i}") for i in obj_list if
-    #          is_rule_used(i, all_hit_data)]
-    #     else:
-    #         pass
-    #
+                rule_used = False
+                for dev in rule_devices:
+                    if obj.name in all_hit_data[dev.id]['NAT']['used']:
+                        rule_used = True
+                if not rule_used and not obj.disabled:
+                    LOGGER.info(f"Tag {SCRIPT_TAG} added to NAT rule \"{obj.name}\" with uuid {obj.uuid}.")
+                    if not report_mode:
+                        add_tag(panorama_obj, obj, SCRIPT_TAG)
+                        obj.disabled = True
+                        obj.apply()
+                        LOGGER.warning(f"Rule \"{obj.name}\" disabled. Device Group: {obj.parent.parent}. UUID: {obj.uuid}")
+    # if all_rules['NAT'] and not report_mode:
+    #     all_rules['NAT'][0].apply_similar()
     # # Disable tagged rules
     # for rule in all_rules['SEC']:
     #     if rule.tag and SCRIPT_TAG in rule.tag:
